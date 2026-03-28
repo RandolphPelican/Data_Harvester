@@ -12,7 +12,11 @@ import threading
 import webview
 
 # Ensure project root is importable
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# When frozen by PyInstaller, files are in sys._MEIPASS temp dir
+if getattr(sys, 'frozen', False):
+    PROJECT_ROOT = sys._MEIPASS
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
 from harvester.core import HarvesterEngine
