@@ -1,5 +1,6 @@
 """Zenodo — Open research repository (free, no key required).
-Supports smart search: ORCID, DOI, author names, and general queries.
+Searches general terms AND creator names to maximize results.
+Supports ORCID, DOI, and record ID patterns.
 """
 import re
 from harvester.clients.base import BaseClient
@@ -11,27 +12,48 @@ class ZenodoClient(BaseClient):
 
     def fetch(self, query: str, max_results: int = 25) -> list:
         q = query.strip()
-        zen_query = self._build_query(q)
 
-        params = {
-            "q": zen_query,
-            "size": min(max_results, 100),
-            "sort": "bestmatch",
-        }
+        # Special patterns: ORCID, DOI, record ID
+        if re.match(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$", q):
+            return self._search(f"creators.orcid:{q}", max_results)
+        if q.startswith("10.") or q.startswith("doi:"):
+            return self._search(f"doi:{q.replace('doi:','').strip()}", max_results)
+        if re.match(r"^\d{5,}$", q):
+            return self._search(f"recid:{q}", max_results)
 
-        resp = self._get(self.BASE_URL, params=params)
-        hits = resp.json().get("hits", {}).get("hits", [])
+        # General search: run BOTH general and creator name queries
+        half = max(max_results // 2, 5)
+        general = self._search(q, half)
+        creator = self._search(f'creators.name:"{q}"', half)
 
-        # If general search returned nothing, try as creator name
-        if not hits and not self._is_special_query(q):
-            params["q"] = f'creators.name:"{q}"'
+        # Also try with words reversed (John Stabler -> Stabler, John)
+        words = q.split()
+        if len(words) == 2:
+            reversed_name = f"{words[1]}, {words[0]}"
+            creator += self._search(f'creators.name:"{reversed_name}"', half)
+
+        # Deduplicate by DOI or title
+        seen = set()
+        merged = []
+        for r in creator + general:
+            key = r.get("doi") or r.get("title", "")
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(r)
+
+        return merged[:max_results]
+
+    def _search(self, zen_query: str, size: int) -> list:
+        params = {"q": zen_query, "size": min(size, 100), "sort": "bestmatch"}
+        try:
             resp = self._get(self.BASE_URL, params=params)
             hits = resp.json().get("hits", {}).get("hits", [])
+        except Exception:
+            return []
 
         results = []
         for item in hits:
             meta = item.get("metadata", {})
-
             creators = meta.get("creators", [])
             authors = []
             for c in creators[:5]:
@@ -50,13 +72,7 @@ class ZenodoClient(BaseClient):
                     pass
 
             doi = item.get("doi", "") or meta.get("doi", "")
-
-            link = ""
-            if doi:
-                link = f"https://doi.org/{doi}"
-            elif item.get("links", {}).get("html"):
-                link = item["links"]["html"]
-
+            link = f"https://doi.org/{doi}" if doi else item.get("links", {}).get("html", "")
             abstract = meta.get("description", "") or ""
             abstract = re.sub(r"<[^>]+>", "", abstract).strip()
 
@@ -67,35 +83,6 @@ class ZenodoClient(BaseClient):
                 doi=doi,
                 link=link,
                 abstract=abstract,
-                resource_type=meta.get("resource_type", {}).get("title", ""),
             ))
-
         return results
-
-    def _build_query(self, q: str) -> str:
-        """Detect ORCID, DOI, or record ID patterns and build proper Zenodo query."""
-        # ORCID pattern: 0000-0000-0000-0000
-        if re.match(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$", q):
-            return f"creators.orcid:{q}"
-
-        # DOI pattern
-        if q.startswith("10.") or q.startswith("doi:"):
-            doi = q.replace("doi:", "").strip()
-            return f"doi:{doi}"
-
-        # Zenodo record ID (just a number)
-        if re.match(r"^\d{5,}$", q):
-            return f"recid:{q}"
-
-        # General search — pass through
-        return q
-
-    def _is_special_query(self, q: str) -> bool:
-        """Check if query was already a special pattern."""
-        return bool(
-            re.match(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$", q) or
-            q.startswith("10.") or
-            q.startswith("doi:") or
-            re.match(r"^\d{5,}$", q)
-        )
 #..

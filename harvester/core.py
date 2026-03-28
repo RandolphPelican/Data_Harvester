@@ -22,6 +22,7 @@ from harvester.clients.ieee import IEEEClient
 from harvester.clients.springer import SpringerClient
 from harvester.clients.scopus import ScopusClient
 from harvester.clients.zenodo import ZenodoClient
+from harvester.clients.osf import OSFClient
 
 
 # Map source IDs to client classes
@@ -39,6 +40,7 @@ CLIENT_MAP = {
     "springer":   SpringerClient,
     "scopus":     ScopusClient,
     "zenodo":     ZenodoClient,
+    "osf":        OSFClient,
 }
 
 # Politeness delay between API calls (seconds)
@@ -69,6 +71,7 @@ class HarvesterEngine:
             "springer":   SpringerClient(api_key=cfg.get("springer_api_key")),
             "scopus":     ScopusClient(api_key=cfg.get("scopus_api_key")),
             "zenodo":     ZenodoClient(),
+            "osf":        OSFClient(),
         }
 
     def harvest_single(self, source_id: str, query: str, max_results: int = 25) -> list:

@@ -18,8 +18,10 @@ class Config:
     DEFAULTS = {
         "base_dir": _default_base_dir(),
         "pubmed_email": "",
+        "openalex_email": "",
         "core_api_key": "",
         "unpaywall_email": "",
+        "semantic_api_key": "",
         "ieee_api_key": "",
         "springer_api_key": "",
         "scopus_api_key": "",
